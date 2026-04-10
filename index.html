@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Öğrenci Takip Sistemi Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore-compat.js"></script>
+    <style>
+        :root { --primary: #2c3e50; --secondary: #3498db; --bg: #f4f7f6; --success: #27ae60; --danger: #e74c3c; --warning: #f39c12; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
+        input, button, textarea { padding: 10px; border-radius: 6px; border: 1px solid #ddd; }
+        button { cursor: pointer; background: var(--secondary); color: white; border: none; font-weight: bold; transition: 0.3s; }
+        button:hover { opacity: 0.8; }
+        .student-list-item { background: #fff; border: 1px solid #eee; padding: 15px; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .student-name { cursor: pointer; color: var(--secondary); font-weight: bold; font-size: 1.2em; text-decoration: underline; }
+        .exam-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; }
+        .hidden { display: none !important; }
+        .chart-box { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 15px; height: 250px; }
+        .delete-btn { background: var(--danger); padding: 5px 10px; font-size: 0.85em; }
+        .edit-btn { background: var(--warning); color: white; padding: 5px 10px; font-size: 0.85em; }
+        .list-item { background: #fff; padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .btn-group { display: flex; gap: 5px; }
+        h3 { border-left: 5px solid var(--secondary); padding-left: 10px; margin-top: 10px; color: var(--primary); }
+        section { margin-bottom: 30px; border: 1px solid #efefef; padding: 15px; border-radius: 10px; background: #fafafa; }
+        .login-box { max-width: 400px; margin: 100px auto; text-align: center; }
+        .login-box input { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+        .login-box button { width: 100%; margin-top: 10px; }
+        label { font-size: 0.8em; font-weight: bold; color: #555; }
+        .eval-badge { background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; margin-right: 10px; }
+        #weekPreview { font-size: 0.85em; color: var(--secondary); font-weight: bold; align-self: center; margin-left: 5px; }
+        .remember-me { display: flex; align-items: center; gap: 5px; font-size: 0.9em; color: #555; margin-bottom: 10px; justify-content: center; }
+        .remember-me input { width: auto; margin: 0; cursor: pointer; }
+        /* Tarih etiketi stili */
+        .topic-date { background: #eee; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; color: #666; margin-left: 8px; font-weight: normal; }
+    </style>
+</head>
+<body>
+
+<div id="loginPage" class="container login-box">
+    <h2 style="color:var(--primary)">Öğrenci Takip Sistemi</h2>
+    <input type="text" id="loginUser" placeholder="Öğrenci Adı">
+    <input type="password" id="loginPass" placeholder="Şifre">
+    <div class="remember-me">
+        <input type="checkbox" id="rememberCheckbox">
+        <label for="rememberCheckbox">Beni Hatırla</label>
+    </div>
+    <button onclick="login()" style="background:var(--success)">Giriş Yap</button>
+    <p id="loginError" style="color:var(--danger); font-size: 0.9em; margin-top:10px;"></p>
+</div>
+
+<div class="container hidden" id="mainPage">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 id="formTitle">Yeni Öğrenci Kaydı</h2>
+        <button onclick="logout()" style="background:#95a5a6;">Çıkış Yap</button>
+    </div>
+    <div class="form-group">
+        <input type="text" id="stuName" placeholder="Öğrenci Adı">
+        <input type="text" id="parentName" placeholder="Veli Adı">
+        <input type="text" id="stuPass" placeholder="Öğrenci Giriş Şifresi">
+        <div id="lessonDays" style="width: 100%;">
+            <div class="form-group lesson-row"><input type="text" placeholder="Ders Günü"> <input type="time"></div>
+        </div>
+        <button onclick="addLessonRow()">+ Gün Ekle</button>
+        <button id="saveBtn" onclick="saveStudent()" style="background: var(--success);">Kaydet</button>
+        <button id="cancelEditBtn" onclick="resetMainForm()" class="hidden" style="background: #95a5a6;">İptal</button>
+    </div>
+    <hr>
+    <h3>Kayıtlı Öğrenciler</h3>
+    <div id="studentList">Yükleniyor...</div>
+</div>
+
+<div class="container hidden" id="detailPage">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <button id="backBtn" onclick="showMainPage()" style="background:#7f8c8d">← Geri</button>
+        <div style="text-align: center;">
+            <h2 id="detailTitle" style="margin:0">Detay</h2>
+            <div id="detailLessonInfo" style="font-size: 0.85em; color: #555; margin-top: 5px;"></div>
+        </div>
+        <button onclick="logout()" style="background:#95a5a6;">Çıkış Yap</button>
+    </div>
+
+    <section>
+        <h3>İşlenilen Konular & Notlar</h3>
+        <div class="form-group admin-only">
+            <input type="date" id="topicDate"> <input type="text" id="topicName" placeholder="Konu Başlığı">
+            <input type="text" id="topicDesc" placeholder="Not/Açıklama">
+            <button id="addTopicBtn" onclick="addTopic()">Konu Ekle</button>
+        </div>
+        <div id="topicList"></div>
+    </section>
+
+    <section>
+        <h3>Haftalık Soru Takibi</h3>
+        <div class="chart-box"><canvas id="solveChart"></canvas></div>
+        <div class="form-group admin-only">
+            <input type="week" id="solveWeek" oninput="updateWeekPreview(this.value)">
+            <span id="weekPreview">Hafta Seçiniz</span>
+            <input type="number" id="solveCount" placeholder="Soru Sayısı">
+            <button id="addSolveBtn" onclick="addSolveData()" style="background:var(--success)">Ekle/Güncelle</button>
+        </div>
+        <div id="solveList"></div>
+    </section>
+
+    <section>
+        <h3>Deneme Takibi</h3>
+        <div class="chart-box"><canvas id="matChart"></canvas></div>
+        <div class="exam-grid admin-only">
+            <input type="text" id="examName" placeholder="Deneme Adı" style="grid-column: 1 / -1">
+            <div><label>Mat (D)</label><input type="number" id="matD"></div>
+            <div><label>Mat (Y)</label><input type="number" id="matY"></div>
+            <div><label>Türkçe (D)</label><input type="number" id="turD"></div>
+            <div><label>Türkçe (Y)</label><input type="number" id="turY"></div>
+            <div><label>Fen (D)</label><input type="number" id="fenD"></div>
+            <div><label>Fen (Y)</label><input type="number" id="fenY"></div>
+            <div><label>Sosyal (D)</label><input type="number" id="sosD"></div>
+            <div><label>Sosyal (Y)</label><input type="number" id="sosY"></div>
+            <button id="addExamBtn" onclick="addExam()" style="grid-column: 1 / -1; background:var(--success)">Denemeyi Kaydet</button>
+        </div>
+        <div id="examList"></div>
+    </section>
+
+    <section id="evaluationSection">
+        <h3>Öğrenci Değerlendirme Bilgileri</h3>
+        <div class="form-group admin-only" style="flex-direction: column; align-items: flex-start;">
+            <div style="display:flex; gap:10px; width:100%">
+                <input type="number" id="evalLessonNo" placeholder="Kaçıncı Ders?" style="width:120px">
+                <input type="text" id="evalTitle" list="previousTitles" placeholder="Değerlendirme Başlığı" style="flex:1">
+                <datalist id="previousTitles"></datalist>
+            </div>
+            <textarea id="evalText" placeholder="Öğrenci hakkında değerlendirme notlarınız..." style="width:100%; height:80px; margin-top:10px; font-family:inherit;"></textarea>
+            <button id="addEvalBtn" onclick="addEvaluation()" style="background:var(--success); margin-top:10px; width:100%">Değerlendirmeyi Kaydet</button>
+        </div>
+        <div id="evaluationList"></div>
+    </section>
+</div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyDWNlQpiaqXP7a_i1BOyBc8ntks1wDAWpE",
+        authDomain: "ders-a37ef.firebaseapp.com",
+        projectId: "ders-a37ef",
+        storageBucket: "ders-a37ef.firebasestorage.app",
+        messagingSenderId: "1065142076428",
+        appId: "1:1065142076428:web:1175114682915fd68c5a29"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    let currentStudentId = null, editMainStudentId = null, editTopicIndex = null, editSolveIndex = null, editExamIndex = null, editEvalIndex = null;
+    let isAdmin = false, matChart, solveChart;
+
+    window.onload = function() {
+        const savedUser = localStorage.getItem('rememberedUser');
+        if (savedUser) {
+            document.getElementById('loginUser').value = savedUser;
+            document.getElementById('rememberCheckbox').checked = true;
+        }
+    };
+
+    function getWeekRange(weekStr) {
+        if(!weekStr) return "";
+        const parts = weekStr.split("-W");
+        const year = parseInt(parts[0]);
+        const week = parseInt(parts[1]);
+        const firstDayOfYear = new Date(year, 0, 1);
+        const days = (week - 1) * 7;
+        const start = new Date(year, 0, 1 + days);
+        const dayOfWeek = start.getDay();
+        const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+        const monday = new Date(start.setDate(diff));
+        const sunday = new Date(new Date(monday).setDate(monday.getDate() + 6));
+        const options = { day: 'numeric', month: 'short' };
+        return `${monday.toLocaleDateString('tr-TR', options)} - ${sunday.toLocaleDateString('tr-TR', options)}`;
+    }
+
+    function updateWeekPreview(val) {
+        document.getElementById('weekPreview').innerText = val ? getWeekRange(val) : "Hafta Seçiniz";
+    }
+
+    async function login() {
+        const user = document.getElementById('loginUser').value.trim().toLowerCase();
+        const pass = document.getElementById('loginPass').value;
+        const remember = document.getElementById('rememberCheckbox').checked;
+
+        if (user === "admin" && pass === "147653") { 
+            if (remember) localStorage.setItem('rememberedUser', user);
+            else localStorage.removeItem('rememberedUser');
+            isAdmin = true;
+            document.getElementById('loginPage').classList.add('hidden');
+            document.getElementById('mainPage').classList.remove('hidden');
+            listenStudentList(); return;
+        }
+        
+        const snap = await db.collection("students").where("name", "==", user).where("password", "==", pass).get();
+        if (!snap.empty) {
+            if (remember) localStorage.setItem('rememberedUser', user);
+            else localStorage.removeItem('rememberedUser');
+            isAdmin = false; const doc = snap.docs[0];
+            document.getElementById('loginPage').classList.add('hidden');
+            document.getElementById('detailPage').classList.remove('hidden');
+            document.getElementById('backBtn').classList.add('hidden');
+            document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+            openDetails(doc.id, doc.data().name);
+        } else document.getElementById('loginError').innerText = "Hatalı Giriş!";
+    }
+
+    function logout() { location.reload(); }
+
+    async function saveStudent() {
+        const name = document.getElementById('stuName').value.trim().toLowerCase();
+        const parent = document.getElementById('parentName').value, password = document.getElementById('stuPass').value;
+        const rows = document.querySelectorAll('.lesson-row');
+        const lessons = Array.from(rows).map(row => ({ day: row.querySelectorAll('input')[0].value, time: row.querySelectorAll('input')[1].value })).filter(l => l.day);
+        if (!name || !password) return alert("İsim/Şifre eksik!");
+        if (editMainStudentId) await db.collection("students").doc(editMainStudentId).update({ name, parent, password, lessons });
+        else await db.collection("students").add({ name, parent, password, lessons, topics: [], exams: [], solves: [], evaluations: [] });
+        resetMainForm();
+    }
+
+    function listenStudentList() {
+        db.collection("students").onSnapshot(snap => {
+            const list = document.getElementById('studentList'); list.innerHTML = "";
+            snap.forEach(doc => {
+                const s = doc.data();
+                const lessonInfo = (s.lessons || []).map(l => `${l.day} (${l.time})`).join(', ');
+                list.innerHTML += `<div class="student-list-item">
+                    <div>
+                        <span class="student-name" onclick="openDetails('${doc.id}', '${s.name}')">${s.name}</span><br>
+                        <small>Şifre: ${s.password}</small><br>
+                        <small style="color:var(--secondary)"><b>Dersler:</b> ${lessonInfo || 'Henüz Eklenmedi'}</small>
+                    </div>
+                    <div class="btn-group">
+                        <button onclick="prepareEditStudent('${doc.id}', '${s.name}', '${s.parent || ''}', '${s.password}', ${JSON.stringify(s.lessons || []).replace(/"/g, '&quot;')})" class="edit-btn">Düzenle</button>
+                        <button onclick="deleteStudent('${doc.id}')" class="delete-btn">Sil</button>
+                    </div>
+                </div>`;
+            });
+        });
+    }
+
+    // TARİH FORMATLAMA YARDIMCISI
+    function formatDate(dateStr) {
+        if(!dateStr) return "";
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('tr-TR');
+    }
+
+    async function loadStudentData() {
+        const doc = await db.collection("students").doc(currentStudentId).get();
+        const d = doc.data(); const btnStyle = isAdmin ? "" : "display:none";
+        const lessonText = (d.lessons || []).map(l => `📅 ${l.day} | ⏰ ${l.time}`).join('  —  ');
+        document.getElementById('detailLessonInfo').innerHTML = lessonText || "Ders programı tanımlanmamış.";
+        
+        // KONU LİSTESİNDE TARİH GÖSTERİMİ GÜNCELLENDİ
+        document.getElementById('topicList').innerHTML = (d.topics || []).map((t, i) => `<div class="list-item">
+            <div>
+                <strong>${t.name}</strong> <span class="topic-date">${formatDate(t.date)}</span><br>
+                <small>${t.desc}</small>
+            </div>
+            <div class="btn-group" style="${btnStyle}">
+                <button class="edit-btn" onclick="prepareEditTopic(${i}, '${t.name}', '${t.desc}', '${t.date || ''}')">Düzelt</button>
+                <button class="delete-btn" onclick="deleteItem('topics', ${i})">Sil</button>
+            </div></div>`).join('');
+        
+        document.getElementById('solveList').innerHTML = (d.solves || []).map((s, i) => `<div class="list-item">
+            <div><strong>${getWeekRange(s.week)}</strong>: ${s.count} Soru</div>
+            <div class="btn-group" style="${btnStyle}"><button class="edit-btn" onclick="prepareEditSolve(${i}, '${s.week}', ${s.count})">Düzelt</button><button class="delete-btn" onclick="deleteItem('solves', ${i})">Sil</button></div></div>`).join('');
+        
+        document.getElementById('examList').innerHTML = (d.exams || []).map((e, i) => `<div class="list-item">
+            <div><strong>${e.name}</strong><br><small>M:${e.matD}D ${e.matY}Y | T:${e.turD}D ${e.turY}Y | F:${e.fenD}D ${e.fenY}Y | S:${e.sosD}D ${e.sosY}Y</small></div>
+            <div class="btn-group" style="${btnStyle}"><button class="edit-btn" onclick="prepareEditExam(${i}, ${JSON.stringify(e).replace(/"/g, '&quot;')})">Düzelt</button><button class="delete-btn" onclick="deleteItem('exams', ${i})">Sil</button></div></div>`).join('');
+        
+        document.getElementById('evaluationList').innerHTML = (d.evaluations || []).map((ev, i) => `<div class="list-item" style="flex-direction:column; align-items:flex-start">
+            <div style="display:flex; justify-content:space-between; width:100%; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom:5px">
+                <div><span class="eval-badge">${ev.lessonNo}. Ders</span><strong>${ev.title}</strong></div>
+                <div class="btn-group" style="${btnStyle}"><button class="edit-btn" onclick="prepareEditEval(${i}, ${JSON.stringify(ev).replace(/"/g, '&quot;')})">Düzelt</button><button class="delete-btn" onclick="deleteItem('evaluations', ${i})">Sil</button></div>
+            </div><div style="white-space: pre-wrap; color:#555; font-size:0.95em">${ev.text}</div></div>`).join('');
+        
+        updateCharts(d.exams || [], d.solves || []);
+    }
+
+    function prepareEditStudent(id, name, parent, pass, lessons) {
+        editMainStudentId = id; document.getElementById('stuName').value = name; document.getElementById('parentName').value = parent; document.getElementById('stuPass').value = pass;
+        document.getElementById('formTitle').innerText = "Öğrenciyi Düzenle"; document.getElementById('cancelEditBtn').classList.remove('hidden');
+        const container = document.getElementById('lessonDays'); container.innerHTML = "";
+        if(lessons.length === 0) addLessonRow(); else { lessons.forEach(l => { const div = document.createElement('div'); div.className = 'form-group lesson-row'; div.innerHTML = `<input type="text" placeholder="Günü" value="${l.day}"> <input type="time" value="${l.time}">`; container.appendChild(div); }); }
+    }
+
+    // KONU DÜZENLEME GÜNCELLENDİ
+    function prepareEditTopic(i, n, d, dt) { 
+        editTopicIndex = i; 
+        document.getElementById('topicName').value = n; 
+        document.getElementById('topicDesc').value = d; 
+        document.getElementById('topicDate').value = dt; 
+        document.getElementById('addTopicBtn').innerText = "Güncelle"; 
+    }
+    
+    function prepareEditSolve(i, w, c) { editSolveIndex = i; document.getElementById('solveWeek').value = w; document.getElementById('solveCount').value = c; updateWeekPreview(w); document.getElementById('addSolveBtn').innerText = "Güncelle"; }
+    function prepareEditExam(i, e) { editExamIndex = i; document.getElementById('examName').value = e.name; document.getElementById('matD').value = e.matD; document.getElementById('matY').value = e.matY; document.getElementById('turD').value = e.turD; document.getElementById('turY').value = e.turY; document.getElementById('fenD').value = e.fenD; document.getElementById('fenY').value = e.fenY; document.getElementById('sosD').value = e.sosD; document.getElementById('sosY').value = e.sosY; document.getElementById('addExamBtn').innerText = "Güncelle"; }
+    function prepareEditEval(i, ev) { editEvalIndex = i; document.getElementById('evalLessonNo').value = ev.lessonNo; document.getElementById('evalTitle').value = ev.title; document.getElementById('evalText').value = ev.text; document.getElementById('addEvalBtn').innerText = "Güncelle"; }
+
+    // KONU EKLEME GÜNCELLENDİ
+    async function addTopic() {
+        const n = document.getElementById('topicName').value, d = document.getElementById('topicDesc').value, dt = document.getElementById('topicDate').value;
+        if(!n) return alert("Konu adı giriniz!");
+        const ref = db.collection("students").doc(currentStudentId); const doc = await ref.get();
+        let list = doc.data().topics || [];
+        const topicData = {name:n, desc:d, date:dt};
+        if(editTopicIndex !== null) list[editTopicIndex] = topicData; else list.push(topicData);
+        await ref.update({topics: list}); resetDetailForms(); loadStudentData();
+    }
+
+    async function addSolveData() {
+        const w = document.getElementById('solveWeek').value, c = document.getElementById('solveCount').value;
+        if(!w) return alert("Hafta seçin!");
+        const ref = db.collection("students").doc(currentStudentId); const doc = await ref.get();
+        let list = doc.data().solves || [];
+        if(editSolveIndex !== null) list[editSolveIndex] = {week:w, count:c}; else list.push({week:w, count:c});
+        await ref.update({solves: list}); resetDetailForms(); loadStudentData();
+    }
+
+    async function addExam() {
+        const e = { name: document.getElementById('examName').value, matD: document.getElementById('matD').value, matY: document.getElementById('matY').value, turD: document.getElementById('turD').value, turY: document.getElementById('turY').value, fenD: document.getElementById('fenD').value, fenY: document.getElementById('fenY').value, sosD: document.getElementById('sosD').value, sosY: document.getElementById('sosY').value };
+        const ref = db.collection("students").doc(currentStudentId); const doc = await ref.get();
+        let list = doc.data().exams || [];
+        if(editExamIndex !== null) list[editExamIndex] = e; else list.push(e);
+        await ref.update({exams: list}); resetDetailForms(); loadStudentData();
+    }
+
+    async function addEvaluation() {
+        const lNo = document.getElementById('evalLessonNo').value, ttl = document.getElementById('evalTitle').value, txt = document.getElementById('evalText').value;
+        if(!lNo || !ttl || !txt) return alert("Eksik alan!");
+        const ref = db.collection("students").doc(currentStudentId); const doc = await ref.get();
+        let list = doc.data().evaluations || [];
+        const evData = {lessonNo: lNo, title: ttl, text: txt};
+        if(editEvalIndex !== null) list[editEvalIndex] = evData; else list.push(evData);
+        await ref.update({evaluations: list}); resetDetailForms(); loadStudentData();
+    }
+
+    function resetDetailForms() { editTopicIndex = null; editSolveIndex = null; editExamIndex = null; editEvalIndex = null; document.getElementById('addTopicBtn').innerText = "Konu Ekle"; document.getElementById('addSolveBtn').innerText = "Ekle/Güncelle"; document.getElementById('addExamBtn').innerText = "Kaydet"; document.getElementById('addEvalBtn').innerText = "Kaydet"; document.querySelectorAll('#detailPage input, #detailPage textarea').forEach(i => i.value = ""); document.getElementById('weekPreview').innerText = "Hafta Seçiniz"; }
+    function resetMainForm() { editMainStudentId = null; document.getElementById('formTitle').innerText = "Yeni Öğrenci Kaydı"; document.querySelectorAll('#mainPage input').forEach(i => i.value = ""); document.getElementById('cancelEditBtn').classList.add('hidden'); document.getElementById('lessonDays').innerHTML = '<div class="form-group lesson-row"><input type="text" placeholder="Ders Günü"> <input type="time"></div>'; }
+    function openDetails(id, name) { currentStudentId = id; document.getElementById('mainPage').classList.add('hidden'); document.getElementById('detailPage').classList.remove('hidden'); document.getElementById('detailTitle').innerText = name; resetDetailForms(); loadStudentData(); }
+    function showMainPage() { document.getElementById('mainPage').classList.remove('hidden'); document.getElementById('detailPage').classList.add('hidden'); }
+    async function deleteItem(f, i) { if(confirm("Sil?")) { const ref = db.collection("students").doc(currentStudentId); const doc = await ref.get(); let list = doc.data()[f]; list.splice(i,1); await ref.update({[f]: list}); loadStudentData(); } }
+    async function deleteStudent(id) { if(confirm("Sil?")) await db.collection("students").doc(id).delete(); }
+    function addLessonRow() { const div = document.createElement('div'); div.className = 'form-group lesson-row'; div.innerHTML = `<input type="text" placeholder="Günü"> <input type="time">`; document.getElementById('lessonDays').appendChild(div); }
+
+    function updateCharts(exams, solves) {
+        const ctxMat = document.getElementById('matChart').getContext('2d'); if(matChart) matChart.destroy();
+        matChart = new Chart(ctxMat, { type: 'line', data: { labels: exams.map(e => e.name), datasets: [{ label: 'Mat Doğru', data: exams.map(e => e.matD), borderColor: '#e67e22' }] }, options: { responsive: true, maintainAspectRatio: false } });
+        const ctxSolve = document.getElementById('solveChart').getContext('2d'); if(solveChart) solveChart.destroy();
+        solveChart = new Chart(ctxSolve, { type: 'bar', data: { labels: solves.map(s => getWeekRange(s.week)), datasets: [{ label: 'Soru Sayısı', data: solves.map(s => s.count), backgroundColor: '#2ecc71' }] }, options: { responsive: true, maintainAspectRatio: false } });
+    }
+</script>
+</body>
+</html>
